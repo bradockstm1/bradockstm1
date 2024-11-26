@@ -7,6 +7,7 @@ import os
 from google.oauth2.service_account import Credentials
 import json
 import toml
+from datetime import time
 
 # Configurar credenciais e acesso à planilha
 scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -30,12 +31,12 @@ def init_dataframes():
         # Se o DataFrame estiver vazio, defina as colunas necessárias
         if vendas_df.empty:
             vendas_df = pd.DataFrame(columns=["Código da Venda", "Produto", "Lote", "Quantidade",
-                                              "Método de Pagamento", "Data da Venda", "Valor Unitário (R$)",
+                                              "Método de Pagamento", "Data da Venda", "Hora da Venda", "Valor Unitário (R$)",
                                               "Valor Total (R$)"])
     except gspread.exceptions.WorksheetNotFound:
         vendas_df = pd.DataFrame(columns=["Código da Venda", "Produto", "Lote", "Quantidade",
-                                          "Método de Pagamento", "Data da Venda", "Valor Unitário (R$)",
-                                          "Valor Total (R$)"])
+                                              "Método de Pagamento", "Data da Venda", "Hora da Venda", "Valor Unitário (R$)",
+                                              "Valor Total (R$)"])
 
     try:
         registro_estoque_sheet = client.open("registro_estoque").worksheet("registro_estoque")
@@ -195,12 +196,13 @@ def saida_vendas():
                                          help=f"Digite o valor de venda mínimo de {valor_minimo_venda} para o produto.",
                                          key=f"valor_unitario_{produto}_{lote}")
         valor_total = valor_unitario * quantidade
-        data_hora_venda = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data_venda = datetime.now().strftime("%Y-%m-%d")
+        data_hora = datetime.now().strftime("%H:%M:%S")
 
         vendas_temp_data.append(
             {"Código da Venda": codigo_venda_temp, "Produto": produto, "Lote": lote, "Quantidade": quantidade,
              "Método de Pagamento": metodo_pagamento, "Valor Unitário (R$)": valor_unitario,
-             "Valor Total (R$)": valor_total, "Data da Venda": data_hora_venda})
+             "Valor Total (R$)": valor_total, "Data da Venda": data_venda, "Hora da Venda": data_hora})
 
     global vendas_temp_df
     vendas_temp_df = pd.DataFrame(vendas_temp_data)
@@ -222,6 +224,7 @@ def visualizar_dados():
     vendas_df, registro_estoque_df = init_dataframes()
 
     st.header("Registro de Estoque")
+
     st.dataframe(registro_estoque_df)
 
     st.header("Vendas")
@@ -231,15 +234,10 @@ def visualizar_dados():
     estoque_atualizado_df = calcular_estoque_atualizado()
     st.dataframe(estoque_atualizado_df)
 
-    vendas_com_custo_df = pd.merge(
-        vendas_df,
-        registro_estoque_df[["Produto", "Lote", "Setor", "Custo (R$)"]],
-        on=["Produto", "Lote"],
-        how="left"
-    )
-    vendas_com_custo_df["Custo Total Vendido (R$)"] = (
-        vendas_com_custo_df["Quantidade"] * vendas_com_custo_df["Custo (R$)"]
-    )
+    vendas_com_custo_df = pd.merge(vendas_df, registro_estoque_df[["Produto", "Lote", "Custo (R$)"]],
+                                   on=["Produto", "Lote"], how="left")
+    vendas_com_custo_df["Custo Total Vendido (R$)"] = vendas_com_custo_df["Quantidade"] * vendas_com_custo_df[
+        "Custo (R$)"]
     valor_total_vendido = vendas_com_custo_df["Valor Total (R$)"].sum()
     custo_total_vendido = vendas_com_custo_df["Custo Total Vendido (R$)"].sum()
     lucro_total = valor_total_vendido - custo_total_vendido
@@ -250,6 +248,7 @@ def visualizar_dados():
 
     if mostrar_informacoes_negocio:
         st.header("Informações sobre o Negócio")
+
         st.subheader("Lucro Total")
         st.write(f"O lucro total é: R$ {lucro_total:.2f}")
 
@@ -258,6 +257,46 @@ def visualizar_dados():
 
         st.subheader("Custo em Estoque")
         st.write(f"O custo em estoque é: R$ {custo_em_estoque:.2f}")
+
+        st.subheader("Total de Vendas em um Período Personalizado")
+
+        # Entrada do usuário para selecionar o período (data e hora)
+        inicio_data = st.date_input("Data de Início", value=datetime.now().date())
+        inicio_hora = st.time_input("Hora de Início", value=time(0, 0))
+        fim_data = st.date_input("Data de Fim", value=datetime.now().date())
+        fim_hora = st.time_input("Hora de Fim", value=time(23, 59))
+
+        # Convertendo datas e horas para timestamps completos
+        inicio_periodo = datetime.combine(inicio_data, inicio_hora)
+        fim_periodo = datetime.combine(fim_data, fim_hora)
+
+        if inicio_periodo > fim_periodo:
+            st.warning("A data e hora de início não podem ser posteriores às de fim.")
+        else:
+            # Filtrando as vendas no período selecionado
+            vendas_df["Data Completa"] = pd.to_datetime(
+                vendas_df["Data da Venda"] + " " + vendas_df["Hora da Venda"],
+                errors="coerce"
+            )
+            vendas_periodo_df = vendas_df[
+                (vendas_df["Data Completa"] >= inicio_periodo) &
+                (vendas_df["Data Completa"] <= fim_periodo)
+            ]
+
+            total_vendas_periodo = vendas_periodo_df["Valor Total (R$)"].sum()
+            st.write(f"O total vendido entre {inicio_periodo} e {fim_periodo} é: R$ {total_vendas_periodo:.2f}")
+
+            # Filtro para tipos de pagamento
+            st.subheader("Total por Método de Pagamento")
+            tipos_pagamento = vendas_periodo_df["Método de Pagamento"].unique()
+            tipo_selecionado = st.selectbox("Selecione o Método de Pagamento", options=tipos_pagamento)
+
+            if tipo_selecionado:
+                vendas_filtradas = vendas_periodo_df[
+                    vendas_periodo_df["Método de Pagamento"] == tipo_selecionado
+                ]
+                total_por_pagamento = vendas_filtradas["Valor Total (R$)"].sum()
+                st.write(f"O total de vendas por {tipo_selecionado} é: R$ {total_por_pagamento:.2f}")
 
 
 # Função para saída de vendas (similar à sua função original)
