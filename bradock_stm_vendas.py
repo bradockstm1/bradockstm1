@@ -263,7 +263,7 @@ def visualizar_dados():
 # Função para saída de vendas (similar à sua função original)
 
 # Barra de Navegação
-page = st.sidebar.radio("Selecione uma opção", options=["Entrada de Estoque", "Saída de Vendas", "Visualizar Dados"])
+page = st.sidebar.radio("Selecione uma opção", options=["Saída de Vendas"])
 vendas_df, registro_estoque_df = init_dataframes()
 # Exibindo a página selecionada
 if page == "Saída de Vendas":
