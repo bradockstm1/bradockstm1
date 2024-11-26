@@ -266,11 +266,8 @@ def visualizar_dados():
 page = st.sidebar.radio("Selecione uma opção", options=["Entrada de Estoque", "Saída de Vendas", "Visualizar Dados"])
 vendas_df, registro_estoque_df = init_dataframes()
 # Exibindo a página selecionada
-if page == "Entrada de Estoque":
-    vendas_df, registro_estoque_df = init_dataframes()
-    entrada_estoque()
-elif page == "Saída de Vendas":
+if page == "Saída de Vendas":
     vendas_df, registro_estoque_df = init_dataframes()
     saida_vendas()
 else:
-    visualizar_dados()
+    saida_vendas()
